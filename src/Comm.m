@@ -9,7 +9,10 @@ classdef Comm < handle
         
     end
     
-    properties (SetAccess = private)
+    properties (SetAccess = protected)
+        
+        % {char 1xm}
+        cConnection % cCONNECTION_SERIAL | cCONNECTION_TCPCLIENT
         
         % tcpclient config
         % --------------------------------
@@ -23,21 +26,29 @@ classdef Comm < handle
         
         % serial config
         % --------------------------------
-        u16BaudRate = 9600;
+        u16BaudRate = uint16(9600)
         cPort = 'COM1'
         cTerminator = '';
+        
+        
         % {double 1x1} - timeout of MATLAB {serial} - amount of time it will
         % wait for a response before aborting.  
         dTimeout = 2;
         
-        cConnection
+        
+        
+        % ascii config for ascii messages
+        % --------------------------------
+        u8TerminatorWrite = uint8([13 10]) % carriage return new line
+        u8TerminatorRead = uint8([13 10])
         
     end 
     
     
-    properties (Access = private)
+    properties (Access = protected)
         
         comm
+        
         % debug config
         lShowWaitingForBytes = false;
         
@@ -49,7 +60,6 @@ classdef Comm < handle
     methods
         
         function this = Comm(varargin)
-            
             
             this.cConnection = this.cCONNECTION_TCPCLIENT;
             
@@ -148,6 +158,18 @@ classdef Comm < handle
             end
         end
         
+        % Writes an ASCII command to the communication object (serial,
+        % tcpip, or tcpclient
+        % Create the binary command packet as follows:
+        % Convert the char command into a list of uint8 (decimal), 
+        % concat with the terminator
+        
+        function writeAscii(this, cCmd)
+            % this.msg(sprintf('write %s', cCmd))
+            u8Cmd = [uint8(cCmd) this.u8TerminatorWrite];
+            this.write(u8Cmd);
+        end
+        
         
         % Blocks execution until the serial has provided BytesAvailable
         % @param {int 1x1} the number of bytes to wait for
@@ -189,6 +211,80 @@ classdef Comm < handle
             end
             
             lSuccess = true;
+            
+        end
+        
+        
+        % Read until the terminator is reached and convert to ASCII if
+        % necessary (tcpip and tcpclient transmit and receive binary data).
+        % @return {char 1xm} the ASCII result
+        
+        function [c, lSuccess] = readAscii(this)
+            
+            [u8Result, lSuccess] = this.readToTerminator();
+            
+            if lSuccess == false
+                c = char(u8Result);
+                return
+            end
+            
+            % remove terminator
+            u8Result = u8Result(1 : end - length(this.u8TerminatorRead));
+            % convert to ASCII (char)
+            c = char(u8Result);
+                
+        end
+        
+        
+        % Returns {uint8 1xm} list of uint8, one for each byte of the
+        % response, including the terminator bytes
+        % Returns {logical 1x1} true if bytes are read before timeout,
+        % false otherwise
+        function [u8Result, lSuccess] = readToTerminator(this)
+            
+            lTerminatorReached = false;
+            u8Result = [];
+            idTic = tic;
+            while(~lTerminatorReached )
+                if (this.comm.BytesAvailable > 0)
+                    
+                    cMsg = sprintf(...
+                        'readToTerminator reading %u bytesAvailable', ...
+                        this.comm.BytesAvailable ...
+                    );
+                    this.msg(cMsg);
+                    % Append available bytes to previously read bytes
+                    
+                    % {uint8 1xm} 
+                    u8Val = read(this.comm, this.comm.BytesAvailable);
+                    % {uint8 1x?}
+                    u8Result = [u8Result u8Val];
+                    
+                    % search new data for terminator
+                    % convert to ASCII and use strfind, since
+                    % terminator can be multiple characters
+                    
+                    if contains(char(u8Val), char(this.u8TerminatorRead))
+                        lTerminatorReached = true;
+                    end
+                end
+                
+                if (toc(idTic) > this.comm.Timeout)
+                    
+                    lSuccess = false;
+                    
+                    cMsg = sprintf(...
+                        'Error.  readToTerminator took too long (> %1.1f sec) to reach terminator', ...
+                        this.dTimeout ...
+                    );
+                    this.msg(cMsg);
+                    return
+                    
+                end
+            end
+            
+            lSuccess = true;
+            
             
         end
         
