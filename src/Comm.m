@@ -158,6 +158,12 @@ classdef Comm < handle
             end
         end
         
+        % Equivalent to writeAscii and readAscii serially
+        function [c, lSuccess] = queryAscii(this, cCmd)
+            this.writeAscii(cCmd);
+            [c, lSuccess] = this.readAscii();
+        end
+        
         % Writes an ASCII command to the communication object (serial,
         % tcpip, or tcpclient
         % Create the binary command packet as follows:
@@ -286,6 +292,31 @@ classdef Comm < handle
             lSuccess = true;
             
             
+        end
+        
+        
+        % Converts a list of uint8 into a binary word.  Useful for unpacking data
+        % from network communication.  e.g. [1 2 3 4] what happens?
+        % 1 -> '00000001'
+        % 2 -> '00000010'
+        % 3 -> '00000011'
+        % 4 -> '00000100'
+        % retult is concatenation: '00000001|00000010|00000011|00000100'
+        function c = int8ToBin(this, u8)
+            % covert column lists to row lists
+            [dRows, dCols] = size(u8);
+            if dRows > 1
+                u8 = u8';
+            end
+            c = dec2bin(u8, 8);
+            c = reshape(c', 1, 8 * length(u8));
+        end
+        
+        % Takes a sequence of uint8 bytes, converts each to binary,
+        % concats all the binary together into a binary word and the
+        % long binary word back to decimal
+        function d = int8StreamToDec(this, u8)
+            d = bin2dec(this.int8ToBin(u8));
         end
         
     end
